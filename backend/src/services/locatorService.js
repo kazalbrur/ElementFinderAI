@@ -5,29 +5,40 @@ const logger = require('../utils/logger');
 
 class LocatorService {
   generateLocators(html, options = {}) {
-    const $ = cheerio.load(html);
-    const elements = this.findInteractiveElements($);
-    const locatorResults = [];
+    try {
+      const $ = cheerio.load(html);
+      const elements = this.findInteractiveElements($);
+      const locatorResults = [];
 
-    elements.each((index, element) => {
-      const $element = $(element);
-      const strategies = this.generateStrategies($element, $, options);
-      
-      if (strategies.length > 0) {
-        const rankedStrategies = rankingService.rankStrategies(strategies, $element, $);
-        locatorResults.push({
-          element: {
-            tag: element.name,
-            text: $element.text().trim().substring(0, 50),
-            attributes: this.getAttributes($element)
-          },
-          strategies: rankedStrategies,
-          context: this.getElementContext($element, $)
-        });
-      }
-    });
+      logger.info(`Found ${elements.length} interactive elements`);
 
-    return locatorResults;
+      elements.each((index, element) => {
+        const $element = $(element);
+        const strategies = this.generateStrategies($element, $, options);
+        
+        if (strategies.length > 0) {
+          // Pass the $ object to rankingService
+          const rankedStrategies = rankingService.rankStrategies(strategies, $element, $);
+          
+          locatorResults.push({
+            element: {
+              tag: element.name,
+              text: $element.text().trim().substring(0, 50),
+              attributes: this.getAttributes($element)
+            },
+            strategies: rankedStrategies,
+            context: this.getElementContext($element, $)
+          });
+        }
+      });
+
+      logger.info(`Generated locators for ${locatorResults.length} elements`);
+      return locatorResults;
+
+    } catch (error) {
+      logger.error('Error generating locators:', error);
+      throw new Error(`Failed to generate locators: ${error.message}`);
+    }
   }
 
   findInteractiveElements($) {
@@ -35,7 +46,7 @@ class LocatorService {
       'a', 'button', 'input', 'select', 'textarea',
       '[role="button"]', '[role="link"]', '[role="checkbox"]',
       '[role="radio"]', '[role="textbox"]', '[role="combobox"]',
-      '[onclick]', '[ng-click]', '[data-action]'
+      '[onclick]', '[ng-click]', '[data-action]', '[data-testid]'
     ];
 
     return $(interactiveSelectors.join(', '));
@@ -45,120 +56,151 @@ class LocatorService {
     const strategies = [];
     const framework = options.framework || 'selenium';
 
-    // ID Strategy
-    if ($element.attr('id')) {
-      strategies.push(this.createStrategy('id', $element.attr('id'), framework));
-    }
-
-    // Name Strategy
-    if ($element.attr('name')) {
-      strategies.push(this.createStrategy('name', $element.attr('name'), framework));
-    }
-
-    // Class Strategy
-    const classes = $element.attr('class');
-    if (classes) {
-      const uniqueClass = this.findUniqueClass(classes.split(' '), $);
-      if (uniqueClass) {
-        strategies.push(this.createStrategy('class', uniqueClass, framework));
-      }
-    }
-
-    // Data Attributes Strategy
-    const dataAttrs = this.getDataAttributes($element);
-    dataAttrs.forEach(attr => {
-      strategies.push(this.createStrategy('data', attr, framework));
-    });
-
-    // Text Strategy
-    const text = $element.text().trim();
-    if (text && text.length < 50) {
-      strategies.push(this.createStrategy('text', text, framework));
-    }
-
-    // CSS Selector Strategy
-    const cssSelector = this.generateCssSelector($element, $);
-    if (cssSelector) {
-      strategies.push(this.createStrategy('css', cssSelector, framework));
-    }
-
-    // XPath Strategy
-    const xpath = this.generateXPath($element, $);
-    if (xpath) {
-      strategies.push(this.createStrategy('xpath', xpath, framework));
-    }
-
-    // Accessibility Strategy
-    if (options.includeAccessibility) {
-      const ariaLabel = $element.attr('aria-label');
-      if (ariaLabel) {
-        strategies.push(this.createStrategy('aria-label', ariaLabel, framework));
+    try {
+      // ID Strategy
+      const id = $element.attr('id');
+      if (id && id.trim()) {
+        strategies.push(this.createStrategy('id', id.trim(), framework));
       }
 
-      const role = $element.attr('role');
-      if (role) {
-        strategies.push(this.createStrategy('role', role, framework));
+      // Name Strategy
+      const name = $element.attr('name');
+      if (name && name.trim()) {
+        strategies.push(this.createStrategy('name', name.trim(), framework));
       }
-    }
 
-    return strategies;
+      // Class Strategy
+      const classes = $element.attr('class');
+      if (classes) {
+        const uniqueClass = this.findUniqueClass(classes.split(/\s+/), $);
+        if (uniqueClass) {
+          strategies.push(this.createStrategy('class', uniqueClass, framework));
+        }
+      }
+
+      // Data Attributes Strategy
+      const dataAttrs = this.getDataAttributes($element);
+      dataAttrs.forEach(attr => {
+        if (attr.name && attr.value) {
+          strategies.push(this.createStrategy('data', attr, framework));
+        }
+      });
+
+      // Text Strategy
+      const text = $element.text().trim();
+      if (text && text.length > 0 && text.length < 50) {
+        strategies.push(this.createStrategy('text', text, framework));
+      }
+
+      // CSS Selector Strategy
+      const cssSelector = this.generateCssSelector($element, $);
+      if (cssSelector) {
+        strategies.push(this.createStrategy('css', cssSelector, framework));
+      }
+
+      // XPath Strategy
+      const xpath = this.generateXPath($element, $);
+      if (xpath) {
+        strategies.push(this.createStrategy('xpath', xpath, framework));
+      }
+
+      // Accessibility Strategy
+      if (options.includeAccessibility) {
+        const ariaLabel = $element.attr('aria-label');
+        if (ariaLabel && ariaLabel.trim()) {
+          strategies.push(this.createStrategy('aria-label', ariaLabel.trim(), framework));
+        }
+
+        const role = $element.attr('role');
+        if (role && role.trim()) {
+          strategies.push(this.createStrategy('role', role.trim(), framework));
+        }
+      }
+
+      logger.debug(`Generated ${strategies.length} strategies for element:`, $element[0].name);
+      return strategies;
+
+    } catch (error) {
+      logger.error('Error generating strategies:', error);
+      return [];
+    }
   }
 
   createStrategy(type, value, framework) {
-    const strategy = {
-      type,
-      value,
-      selector: this.formatSelector(type, value, framework),
-      confidence: 0,
-      stability: 0
-    };
+    try {
+      const strategy = {
+        type,
+        value,
+        selector: this.formatSelector(type, value, framework),
+        confidence: 0,
+        stability: 0
+      };
 
-    // Calculate initial confidence and stability
-    strategy.confidence = this.calculateConfidence(type, value);
-    strategy.stability = this.calculateStability(type, value);
+      // Calculate initial confidence and stability
+      strategy.confidence = this.calculateConfidence(type, value);
+      strategy.stability = this.calculateStability(type, value);
 
-    return strategy;
+      return strategy;
+    } catch (error) {
+      logger.error(`Error creating strategy for type ${type}:`, error);
+      return null;
+    }
   }
 
   formatSelector(type, value, framework) {
-    const formatters = {
-      selenium: {
-        id: (v) => `By.id("${v}")`,
-        name: (v) => `By.name("${v}")`,
-        class: (v) => `By.className("${v}")`,
-        css: (v) => `By.cssSelector("${v}")`,
-        xpath: (v) => `By.xpath("${v}")`,
-        text: (v) => `By.linkText("${v}")`,
-        'aria-label': (v) => `By.cssSelector("[aria-label='${v}']")`,
-        role: (v) => `By.cssSelector("[role='${v}']")`,
-        data: (v) => `By.cssSelector("[${v.name}='${v.value}']")`
-      },
-      playwright: {
-        id: (v) => `#${v}`,
-        name: (v) => `[name="${v}"]`,
-        class: (v) => `.${v}`,
-        css: (v) => v,
-        xpath: (v) => v,
-        text: (v) => `text="${v}"`,
-        'aria-label': (v) => `[aria-label="${v}"]`,
-        role: (v) => `[role="${v}"]`,
-        data: (v) => `[${v.name}="${v.value}"]`
-      },
-      cypress: {
-        id: (v) => `cy.get('#${v}')`,
-        name: (v) => `cy.get('[name="${v}"]')`,
-        class: (v) => `cy.get('.${v}')`,
-        css: (v) => `cy.get('${v}')`,
-        xpath: (v) => `cy.xpath('${v}')`,
-        text: (v) => `cy.contains('${v}')`,
-        'aria-label': (v) => `cy.get('[aria-label="${v}"]')`,
-        role: (v) => `cy.get('[role="${v}"]')`,
-        data: (v) => `cy.get('[${v.name}="${v.value}"]')`
-      }
-    };
+    try {
+      const formatters = {
+        selenium: {
+          id: (v) => `By.id("${v}")`,
+          name: (v) => `By.name("${v}")`,
+          class: (v) => `By.className("${v}")`,
+          css: (v) => `By.cssSelector("${v}")`,
+          xpath: (v) => `By.xpath("${v}")`,
+          text: (v) => `By.linkText("${v}")`,
+          'aria-label': (v) => `By.cssSelector("[aria-label='${v}']")`,
+          role: (v) => `By.cssSelector("[role='${v}']")`,
+          data: (v) => `By.cssSelector("[${v.name}='${v.value}']")`
+        },
+        playwright: {
+          id: (v) => `page.locator('#${this.escapeSelector(v)}')`,
+          name: (v) => `page.locator('[name="${this.escapeSelector(v)}"]')`,
+          class: (v) => `page.locator('.${this.escapeSelector(v)}')`,
+          css: (v) => `page.locator('${v}')`,
+          xpath: (v) => `page.locator('xpath=${v}')`,
+          text: (v) => `page.getByText('${this.escapeSelector(v)}')`,
+          'aria-label': (v) => `page.getByLabel('${this.escapeSelector(v)}')`,
+          role: (v) => `page.getByRole('${v}')`,
+          data: (v) => `page.locator('[${v.name}="${this.escapeSelector(v.value)}"]')`
+        },
+        cypress: {
+          id: (v) => `cy.get('#${this.escapeSelector(v)}')`,
+          name: (v) => `cy.get('[name="${this.escapeSelector(v)}"]')`,
+          class: (v) => `cy.get('.${this.escapeSelector(v)}')`,
+          css: (v) => `cy.get('${v}')`,
+          xpath: (v) => `cy.xpath('${v}')`,
+          text: (v) => `cy.contains('${this.escapeSelector(v)}')`,
+          'aria-label': (v) => `cy.get('[aria-label="${this.escapeSelector(v)}"]')`,
+          role: (v) => `cy.get('[role="${v}"]')`,
+          data: (v) => `cy.get('[${v.name}="${this.escapeSelector(v.value)}"]')`
+        }
+      };
 
-    const formatter = formatters[framework]?.[type];
-    return formatter ? formatter(value) : value;
+      const formatter = formatters[framework]?.[type];
+      if (!formatter) {
+        logger.warn(`No formatter found for framework: ${framework}, type: ${type}`);
+        return String(value);
+      }
+
+      return formatter(value);
+    } catch (error) {
+      logger.error(`Error formatting selector for ${type}:`, error);
+      return String(value);
+    }
+  }
+
+  escapeSelector(value) {
+    if (typeof value !== 'string') return value;
+    return value.replace(/['"\\]/g, '\\$&');
   }
 
   calculateConfidence(type, value) {
@@ -176,12 +218,19 @@ class LocatorService {
 
     let confidence = confidenceScores[type] || 0.5;
 
-    // Adjust based on value characteristics
-    if (type === 'id' && /^[a-zA-Z][\w-]*$/.test(value)) {
-      confidence += 0.05;
-    }
-    if (type === 'class' && value.split(' ').length === 1) {
-      confidence += 0.1;
+    try {
+      // Adjust based on value characteristics
+      if (type === 'id' && typeof value === 'string' && /^[a-zA-Z][\w-]*$/.test(value)) {
+        confidence += 0.05;
+      }
+      if (type === 'class' && typeof value === 'string' && !value.includes(' ')) {
+        confidence += 0.1;
+      }
+      if (type === 'data' && value.name && value.name.includes('test')) {
+        confidence += 0.1;
+      }
+    } catch (error) {
+      logger.warn(`Error calculating confidence for ${type}:`, error);
     }
 
     return Math.min(confidence, 1.0);
@@ -190,131 +239,165 @@ class LocatorService {
   calculateStability(type, value) {
     let stability = 0.5;
 
-    // IDs are generally stable
-    if (type === 'id') {
-      stability = 0.9;
-      // Reduce if ID looks auto-generated
-      if (/^\d+$/.test(value) || /[a-f0-9]{8,}/.test(value)) {
-        stability -= 0.3;
+    try {
+      // IDs are generally stable
+      if (type === 'id') {
+        stability = 0.9;
+        if (typeof value === 'string') {
+          // Reduce if ID looks auto-generated
+          if (/^\d+$/.test(value) || /[a-f0-9]{8,}/.test(value)) {
+            stability -= 0.3;
+          }
+        }
       }
+
+      // Data attributes are usually stable
+      if (type === 'data') {
+        stability = 0.8;
+        if (value.name && value.name.includes('test')) {
+          stability += 0.1;
+        }
+      }
+
+      // Text can be unstable
+      if (type === 'text') {
+        stability = 0.4;
+      }
+
+      // XPath with indices is unstable
+      if (type === 'xpath' && typeof value === 'string' && /\[\d+\]/.test(value)) {
+        stability = 0.3;
+      }
+    } catch (error) {
+      logger.warn(`Error calculating stability for ${type}:`, error);
     }
 
-    // Data attributes are usually stable
-    if (type === 'data') {
-      stability = 0.8;
-    }
-
-    // Text can be unstable
-    if (type === 'text') {
-      stability = 0.4;
-    }
-
-    // XPath with indices is unstable
-    if (type === 'xpath' && /\[\d+\]/.test(value)) {
-      stability = 0.3;
-    }
-
-    return stability;
+    return Math.max(0, Math.min(1, stability));
   }
 
   findUniqueClass(classes, $) {
-    for (const cls of classes) {
-      if (cls && $(`.${cls}`).length === 1) {
-        return cls;
+    try {
+      for (const cls of classes) {
+        if (cls && cls.trim() && $(`.${cls.trim()}`).length === 1) {
+          return cls.trim();
+        }
       }
+    } catch (error) {
+      logger.warn('Error finding unique class:', error);
     }
     return null;
   }
 
   getDataAttributes($element) {
     const attrs = [];
-    const elementAttrs = $element[0].attribs || {};
-    
-    Object.keys(elementAttrs).forEach(key => {
-      if (key.startsWith('data-')) {
-        attrs.push({
-          name: key,
-          value: elementAttrs[key]
-        });
-      }
-    });
+    try {
+      const elementAttrs = $element[0].attribs || {};
+      
+      Object.keys(elementAttrs).forEach(key => {
+        if (key.startsWith('data-') && elementAttrs[key]) {
+          attrs.push({
+            name: key,
+            value: elementAttrs[key]
+          });
+        }
+      });
+    } catch (error) {
+      logger.warn('Error getting data attributes:', error);
+    }
 
     return attrs;
   }
 
   getAttributes($element) {
     const attrs = {};
-    const elementAttrs = $element[0].attribs || {};
-    
-    Object.keys(elementAttrs).forEach(key => {
-      attrs[key] = elementAttrs[key];
-    });
+    try {
+      const elementAttrs = $element[0].attribs || {};
+      
+      Object.keys(elementAttrs).forEach(key => {
+        attrs[key] = elementAttrs[key];
+      });
+    } catch (error) {
+      logger.warn('Error getting attributes:', error);
+    }
 
     return attrs;
   }
 
   generateCssSelector($element, $) {
-    const parts = [];
-    let current = $element;
+    try {
+      const parts = [];
+      let current = $element;
 
-    while (current.length && current[0].name !== 'html') {
-      let selector = current[0].name;
-      
-      const id = current.attr('id');
-      if (id) {
-        parts.unshift(`#${id}`);
-        break;
-      }
-
-      const classes = current.attr('class');
-      if (classes) {
-        const uniqueClass = this.findUniqueClass(classes.split(' '), $);
-        if (uniqueClass) {
-          selector += `.${uniqueClass}`;
+      while (current.length && current[0].name !== 'html' && parts.length < 5) {
+        let selector = current[0].name;
+        
+        const id = current.attr('id');
+        if (id) {
+          parts.unshift(`#${id}`);
+          break;
         }
+
+        const classes = current.attr('class');
+        if (classes) {
+          const classList = classes.split(/\s+/).filter(cls => cls.trim());
+          const uniqueClass = this.findUniqueClass(classList, $);
+          if (uniqueClass) {
+            selector += `.${uniqueClass}`;
+          } else if (classList.length > 0) {
+            selector += `.${classList[0]}`;
+          }
+        }
+
+        const siblings = current.siblings(current[0].name);
+        if (siblings.length > 0) {
+          const index = current.index() + 1;
+          selector += `:nth-child(${index})`;
+        }
+
+        parts.unshift(selector);
+        current = current.parent();
       }
 
-      const siblings = current.siblings(current[0].name);
-      if (siblings.length > 0) {
-        const index = current.index() + 1;
-        selector += `:nth-child(${index})`;
-      }
-
-      parts.unshift(selector);
-      current = current.parent();
+      return parts.join(' > ');
+    } catch (error) {
+      logger.warn('Error generating CSS selector:', error);
+      return null;
     }
-
-    return parts.join(' > ');
   }
 
   generateXPath($element, $) {
-    const parts = [];
-    let current = $element;
+    try {
+      const parts = [];
+      let current = $element;
 
-    while (current.length && current[0].name !== 'html') {
-      let xpath = current[0].name;
-      
-      const id = current.attr('id');
-      if (id) {
-        return `//*[@id="${id}"]`;
+      while (current.length && current[0].name !== 'html' && parts.length < 10) {
+        let xpath = current[0].name;
+        
+        const id = current.attr('id');
+        if (id) {
+          return `//*[@id="${id}"]`;
+        }
+
+        const classes = current.attr('class');
+        if (classes) {
+          xpath += `[@class="${classes}"]`;
+        }
+
+        const siblings = current.siblings(current[0].name);
+        if (siblings.length > 0) {
+          const index = current.index() + 1;
+          xpath += `[${index}]`;
+        }
+
+        parts.unshift(xpath);
+        current = current.parent();
       }
 
-      const classes = current.attr('class');
-      if (classes) {
-        xpath += `[@class="${classes}"]`;
-      }
-
-      const siblings = current.siblings(current[0].name);
-      if (siblings.length > 0) {
-        const index = current.index() + 1;
-        xpath += `[${index}]`;
-      }
-
-      parts.unshift(xpath);
-      current = current.parent();
+      return '//' + parts.join('/');
+    } catch (error) {
+      logger.warn('Error generating XPath:', error);
+      return null;
     }
-
-    return '//' + parts.join('/');
   }
 
   getElementContext($element, $) {
@@ -325,40 +408,44 @@ class LocatorService {
       navigation: null
     };
 
-    // Get parent context
-    const parent = $element.parent();
-    if (parent.length) {
-      context.parent = {
-        tag: parent[0].name,
-        id: parent.attr('id'),
-        class: parent.attr('class')
-      };
-    }
+    try {
+      // Get parent context
+      const parent = $element.parent();
+      if (parent.length) {
+        context.parent = {
+          tag: parent[0].name,
+          id: parent.attr('id'),
+          class: parent.attr('class')
+        };
+      }
 
-    // Check if element is in a form
-    const form = $element.closest('form');
-    if (form.length) {
-      context.form = {
-        id: form.attr('id'),
-        name: form.attr('name'),
-        action: form.attr('action')
-      };
-    }
+      // Check if element is in a form
+      const form = $element.closest('form');
+      if (form.length) {
+        context.form = {
+          id: form.attr('id'),
+          name: form.attr('name'),
+          action: form.attr('action')
+        };
+      }
 
-    // Check for section context
-    const section = $element.closest('section, article, main, aside');
-    if (section.length) {
-      context.section = {
-        tag: section[0].name,
-        id: section.attr('id'),
-        class: section.attr('class')
-      };
-    }
+      // Check for section context
+      const section = $element.closest('section, article, main, aside');
+      if (section.length) {
+        context.section = {
+          tag: section[0].name,
+          id: section.attr('id'),
+          class: section.attr('class')
+        };
+      }
 
-    // Check for navigation context
-    const nav = $element.closest('nav, [role="navigation"]');
-    if (nav.length) {
-      context.navigation = true;
+      // Check for navigation context
+      const nav = $element.closest('nav, [role="navigation"]');
+      if (nav.length) {
+        context.navigation = true;
+      }
+    } catch (error) {
+      logger.warn('Error getting element context:', error);
     }
 
     return context;
