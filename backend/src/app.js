@@ -1,8 +1,10 @@
+// backend/src/app.js - Updated to include script generation routes
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const locatorRoutes = require('./routes/locatorRoutes');
+const scriptGenerationRoutes = require('./routes/scriptGenerationRoutes');
 const errorHandler = require('./middleware/errorHandler');
 const rateLimiter = require('./middleware/rateLimiter');
 const logger = require('./utils/logger');
@@ -32,10 +34,19 @@ app.use('/api/', rateLimiter);
 
 // Routes
 app.use('/api/locators', locatorRoutes);
+app.use('/api/scripts', scriptGenerationRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'healthy', 
+    timestamp: new Date().toISOString(),
+    services: {
+      locatorGeneration: 'operational',
+      scriptGeneration: 'operational',
+      geminiApi: process.env.GEMINI_API_KEY ? 'configured' : 'missing'
+    }
+  });
 });
 
 // Error handling

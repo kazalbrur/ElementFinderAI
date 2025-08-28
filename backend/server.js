@@ -1,3 +1,4 @@
+// backend/server.js - Updated with script generation endpoints
 require('dotenv').config();
 const app = require('./src/app');
 const logger = require('./src/utils/logger');
@@ -27,13 +28,27 @@ const server = app.listen(PORT, () => {
   logger.info(`🔧 Gemini API: ${process.env.GEMINI_API_KEY ? 'Configured' : 'Missing'}`);
   logger.info(`📁 Uploads directory: ${uploadsDir}`);
   logger.info(`📋 Available endpoints:`);
-  logger.info(`   • POST /api/locators/analyze-url - Analyze webpage`);
-  logger.info(`   • POST /api/locators/analyze-html - Analyze HTML content`);
-  logger.info(`   • POST /api/locators/upload-html - Upload HTML file`);
-  logger.info(`   • POST /api/locators/verify - Verify locator`);
-  logger.info(`   • POST /api/locators/element-details - Get element details`);
-  logger.info(`   • POST /api/locators/batch-analyze - Batch analysis`);
-  logger.info(`   • GET /health - Health check`);
+  
+  // Locator endpoints
+  logger.info(`   📍 Locator Generation:`);
+  logger.info(`     • POST /api/locators/analyze-url - Analyze webpage`);
+  logger.info(`     • POST /api/locators/analyze-html - Analyze HTML content`);
+  logger.info(`     • POST /api/locators/upload-html - Upload HTML file`);
+  logger.info(`     • POST /api/locators/verify - Verify locator`);
+  logger.info(`     • POST /api/locators/element-details - Get element details`);
+  logger.info(`     • POST /api/locators/batch-analyze - Batch analysis`);
+  
+  // Script generation endpoints
+  logger.info(`   🧪 Test Script Generation:`);
+  logger.info(`     • POST /api/scripts/generate-script - Generate test script`);
+  logger.info(`     • POST /api/scripts/generate-page-object - Generate page object model`);
+  logger.info(`     • POST /api/scripts/generate-test-data - Generate test data`);
+  logger.info(`     • POST /api/scripts/generate-test-suite - Generate complete test suite`);
+  logger.info(`     • GET /api/scripts/templates - Get script templates`);
+  logger.info(`     • POST /api/scripts/validate-script - Validate generated script`);
+  
+  logger.info(`   🏥 Health Check:`);
+  logger.info(`     • GET /health - Health check`);
 });
 
 // Graceful shutdown handling
