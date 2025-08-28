@@ -1,4 +1,4 @@
-/ backend/src/services/scriptGenerationService.js
+
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const logger = require('../utils/logger');
 
